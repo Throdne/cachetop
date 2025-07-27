@@ -1,0 +1,15 @@
+# Runtime dependencies - none required (uses only Python standard library)
+# Standard library modules used:
+# - subprocess
+# - time
+# - os
+# - sys
+# - collections
+# - re
+# - shutil
+# - termios
+# - tty
+# - argparse
+
+# Build dependencies
+pyinstaller>=5.0

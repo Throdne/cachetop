@@ -1,0 +1,2 @@
+# Build requirements for creating binary
+pyinstaller>=5.0

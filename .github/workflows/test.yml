@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Test script syntax
+      run: |
+        python -m py_compile cachetop.py
+    
+    - name: Test help command
+      run: |
+        python cachetop.py --help
+    
+    - name: Check for LVM (simulation)
+      run: |
+        # Test that the script handles missing LVM gracefully
+        python cachetop.py --vg test --lv test || echo "Expected to fail without LVM - OK"

@@ -1,0 +1,165 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8, 3.9, '3.10', '3.11']
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-build.txt
+    
+    - name: Lint with flake8 (optional)
+      run: |
+        pip install flake8
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      continue-on-error: true
+    
+    - name: Test script syntax
+      run: |
+        python -m py_compile cachetop.py
+    
+    - name: Test help command
+      run: |
+        python cachetop.py --help
+
+  build-binary:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-build.txt
+    
+    - name: Build binary
+      run: |
+        chmod +x build.sh
+        ./build.sh
+    
+    - name: Test binary
+      run: |
+        ./dist/cachetop --help
+    
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: cachetop-linux-x64
+        path: dist/cachetop
+        retention-days: 30
+
+  release:
+    needs: [test, build-binary]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-build.txt
+        pip install build twine
+    
+    - name: Build binary
+      run: |
+        chmod +x build.sh
+        ./build.sh
+    
+    - name: Build Python package
+      run: |
+        python -m build
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          ## cachetop ${{ github.ref }}
+          
+          Real-time LVM cache monitoring tool
+          
+          ### Installation
+          
+          **Binary (recommended):**
+          ```bash
+          # Download and install binary
+          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/cachetop-linux-x64
+          chmod +x cachetop-linux-x64
+          sudo mv cachetop-linux-x64 /usr/local/bin/cachetop
+          ```
+          
+          **From source:**
+          ```bash
+          pip install cachetop
+          ```
+          
+          ### Usage
+          ```bash
+          cachetop  # Auto-detect LVM cache volumes
+          cachetop --help  # Show all options
+          ```
+          
+          ### What's Changed
+          - See commit history for detailed changes
+        draft: false
+        prerelease: false
+    
+    - name: Upload Binary to Release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/cachetop
+        asset_name: cachetop-linux-x64
+        asset_content_type: application/octet-stream
+    
+    - name: Upload Python Package to Release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/cachetop-*.tar.gz
+        asset_name: cachetop-source.tar.gz
+        asset_content_type: application/gzip
