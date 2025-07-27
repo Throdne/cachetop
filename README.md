@@ -81,13 +81,13 @@ Terminal: 120x30 | Bar width: 84 | Graph width: 108 | Press Ctrl+C to exit
 **Quick install:**
 ```bash
 # Download and run install script
-curl -sSL https://raw.githubusercontent.com/yourusername/cachetop/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/Throdne/cachetop/main/install.sh | bash
 ```
 
 **Manual binary install:**
 ```bash
 # Download latest binary
-wget https://github.com/yourusername/cachetop/releases/latest/download/cachetop-linux-x64
+wget https://github.com/Throdne/cachetop/releases/latest/download/cachetop-linux-x64
 chmod +x cachetop-linux-x64
 sudo mv cachetop-linux-x64 /usr/local/bin/cachetop
 ```
@@ -96,7 +96,7 @@ sudo mv cachetop-linux-x64 /usr/local/bin/cachetop
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/cachetop.git
+git clone https://github.com/Throdne/cachetop.git
 cd cachetop
 
 # Build binary
