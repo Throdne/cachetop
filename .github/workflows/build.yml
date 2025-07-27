@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python 3.13.5
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: 3.13.5
     
@@ -46,10 +46,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python 3.13.5
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: 3.13.5
     
@@ -68,7 +68,7 @@ jobs:
         ./dist/cachetop --help
     
     - name: Upload binary artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cachetop-linux-x64
         path: dist/cachetop
@@ -80,10 +80,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python 3.13.5
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: 3.13.5
     
@@ -103,15 +103,13 @@ jobs:
         python -m build
     
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
+        name: Release ${{ github.ref_name }}
         body: |
-          ## cachetop ${{ github.ref }}
+          ## cachetop ${{ github.ref_name }}
           
           Real-time LVM cache monitoring tool
           
@@ -120,7 +118,7 @@ jobs:
           **Binary (recommended):**
           ```bash
           # Download and install binary
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/cachetop-linux-x64
+          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/cachetop-linux-x64
           chmod +x cachetop-linux-x64
           sudo mv cachetop-linux-x64 /usr/local/bin/cachetop
           ```
@@ -138,25 +136,8 @@ jobs:
           
           ### What's Changed
           - See commit history for detailed changes
+        files: |
+          dist/cachetop
+          dist/cachetop-*.tar.gz
         draft: false
         prerelease: false
-    
-    - name: Upload Binary to Release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/cachetop
-        asset_name: cachetop-linux-x64
-        asset_content_type: application/octet-stream
-    
-    - name: Upload Python Package to Release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/cachetop-*.tar.gz
-        asset_name: cachetop-source.tar.gz
-        asset_content_type: application/gzip
