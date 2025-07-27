@@ -46,3 +46,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Screenshots - keep directory but ignore placeholder files
+screenshots/.gitkeep
+screenshots/placeholder-*

@@ -16,6 +16,64 @@ A real-time monitoring tool for LVM cache performance with htop-style visual dis
 - 📋 Interactive volume selection menu with arrow key navigation
 - ⚡ Smart defaults with manual override options
 
+## Screenshots
+
+### Main Interface
+![cachetop main interface](screenshots/cachetop-main.png)
+
+*Real-time LVM cache monitoring with dual-color progress bars, hit ratio statistics, and historical trend graphs*
+
+### Interactive Volume Selection
+![Volume selection menu](screenshots/cachetop-selection.png)
+
+*Auto-detection with interactive selection menu for multiple cache volumes*
+
+### Sample Output
+```
+cachetop - vg_games/games
+================================
+
+Current Statistics:
+Cache Pool:   32.0GB total
+Cache Usage:  45.2% (14.5GB used)
+  ├─ Reads:   ~8.7GB (7048 blocks)
+  └─ Writes:  ~5.8GB (4681 blocks)
+Dirty Blocks: 12.3% (3.9GB dirty)
+Hit Ratio:    89.5% (45231 total operations)
+Read Hits:    92.1% (28934 read operations)
+Write Hits:   85.2% (16297 write operations)
+
+Real-time Status:
+Cache Usage   [████████████████████░░░░░░░░░] 45.2%
+              █ Read cache  █ Write cache  ░ Free
+Dirty Blocks  [████░░░░░░░░░░░░░░░░░░░░░░░░░░] 12.3%
+Hit Ratio     [████████████████████████████░] 89.5%
+Read Hits     [████████████████████████████░] 92.1%
+Write Hits    [██████████████████████████░░░] 85.2%
+
+Historical Trends (last 45 samples):
+
+Cache Usage Over Time:
+100%|                                          |
+ 75%|      ●                                   |
+ 50%|    ●   ●●●                               |
+ 25%|  ●       ●●●●●                          |
+  0%|●●           ●●●●●●●●●●●●●●●●●●●●●●●●●●●●|
+    ────────────────────────────────────────────
+    45 samples ago                          now
+
+Hit Ratio Over Time:
+100%|●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●|
+ 75%|                                          |
+ 50%|                                          |
+ 25%|                                          |
+  0%|                                          |
+    ────────────────────────────────────────────
+    45 samples ago                          now
+
+Terminal: 120x30 | Bar width: 84 | Graph width: 108 | Press Ctrl+C to exit
+```
+
 ## Installation
 
 ### Binary Installation (Recommended)
