@@ -2,6 +2,10 @@
 """
 cachetop - Real-time LVM cache monitoring tool similar to htop
 Shows cache usage, hit ratio, and dirty blocks over time
+
+Version: 2025.07
+Author: Jerico Thomas
+License: MIT
 """
 
 import subprocess
@@ -535,6 +539,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='cachetop - Real-time LVM cache monitor')
+    parser.add_argument('--version', action='version', version='cachetop 2025.07')
     parser.add_argument('--vg', help='Volume group name')
     parser.add_argument('--lv', help='Logical volume name')
     parser.add_argument('--interval', type=int, default=2, help='Refresh interval in seconds (default: 2)')

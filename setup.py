@@ -13,7 +13,7 @@ def read_readme():
 
 # Read version from script
 def get_version():
-    version = "1.0.0"  # Default version
+    version = "2025.07"  # Release version
     return version
 
 setup(
