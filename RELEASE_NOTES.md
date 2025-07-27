@@ -64,7 +64,7 @@ make binary && make install-binary
 ### 🛠 **Technical Specifications**
 
 - **Dependencies**: None! (Uses only Python standard library)
-- **Python Support**: 3.6+ (f-string compatible)
+- **Python Support**: 3.6+ (developed and tested with 3.13.5)
 - **LVM Requirements**: LVM2 2.02.95+ with cache support
 - **Operating System**: Linux (dm-cache kernel support required)
 - **Binary Size**: ~7.3MB (single-file executable)
@@ -100,9 +100,9 @@ cachetop --help
 
 ### 🔧 **Build and CI/CD Features**
 
-- **Automated binary builds** with PyInstaller
+- **Automated binary builds** with PyInstaller on Python 3.13.5
 - **GitHub Actions CI/CD** pipeline
-- **Multi-Python version testing** (3.6 through 3.11)
+- **Comprehensive testing** with syntax validation and help command verification
 - **Automated releases** on git tags
 - **Professional packaging** with setup.py
 - **Virtual environment isolation** for reproducible builds

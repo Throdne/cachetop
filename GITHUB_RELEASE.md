@@ -68,7 +68,7 @@ cachetop --help            # Show all options
 - **OS**: Linux with LVM2 2.02.95+
 - **Kernel**: dm-cache support (Linux 3.9+)
 - **Permissions**: sudo access for LVM commands
-- **Python**: 3.6+ (binary version: none!)
+- **Python**: 3.6+ (binary version: none! Built with 3.13.5)
 
 ### 📦 What's Included
 
