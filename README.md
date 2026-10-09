@@ -1,78 +1,87 @@
 # cachetop
 
-A real-time monitoring tool for LVM cache performance with htop-style visual displays. This Python script provides comprehensive insights into your LVM cache usage, hit ratios, and performance trends over time.
+A real-time terminal monitor for LVM cache (dm-cache) with an htop-style display. It shows how the cache is performing **and where your writes are actually waiting**: in RAM, in the kernel, in the LVM cache, on the cache drive, or on the slow disk behind it.
 
 ## Features
 
-- 🔄 Real-time cache statistics monitoring
-- 📊 Visual progress bars with color-coded status indicators
-- 📈 Historical trend graphs for performance analysis
-- 🎨 Dual-color cache usage visualization (read vs write)
-- 🖥️ Terminal-based interface similar to htop
-- ⚙️ Configurable refresh intervals and history depth
-- 📏 Dynamic terminal sizing - bars and graphs automatically adjust to window width
-- 🌈 Performance-based color coding for instant status assessment
-- 🔍 Automatic LVM cache volume detection
-- 📋 Interactive volume selection menu with arrow key navigation
-- ⚡ Smart defaults with manual override options
+- 🧭 **I/O pipeline diagram** — RAM cache → kernel flush → LVM cache → cache drive / slow disk, with each stage colored by load and a plain-language **bottleneck verdict**
+- 🧠 **Dirty data in RAM** — how much is waiting to be written, how fast it drains, an ETA, and how close it is to the kernel's stall limit
+- 💽 **Both drives side by side** — throughput, latency, queue depth, busy % (and temperature for the NVMe), averaged over 5 seconds so lumpy I/O reads smoothly
+- 🗄️ **Real LVM cache counters** — blocks copied into the cache (promotions) and evicted (demotions) with live rates, plus exact hit/miss counts
+- ⏱️ **Writeback flush ETA** — speed and time-to-clear for dirty cache blocks, in the pipeline and in the LVM section
+- 🛠️ **ext4 background init progress** — percent done, groups remaining, speed and ETA while `ext4lazyinit` zeroes a new filesystem's inode tables
+- 📊 Color-coded percentage bars (cache usage, dirty blocks, hit ratios)
+- ⚡ Light on the system: one `dmsetup status` query per refresh, flicker-free redraw, adjustable refresh rate
+- 🔍 Automatic LVM cache volume detection, with an interactive picker when there are several
+- ⌨️ `+` / `-` change the refresh rate while running, `q` quits
 
-## Screenshots
+## Sample Output
 
-### Main Interface
-![cachetop main interface](screenshots/cachetop-main.png)
+The layout is a fixed 100 columns wide (the terminal must be at least that wide).
 
-*Real-time LVM cache monitoring with dual-color progress bars, hit ratio statistics, and historical trend graphs*
-
-### Interactive Volume Selection
-![Volume selection menu](screenshots/cachetop-selection.png)
-
-*Auto-detection with interactive selection menu for multiple cache volumes*
-
-### Sample Output
 ```
 cachetop - vg_games/games
-================================
+===================================
 
-Current Statistics:
-Cache Pool:   32.0GB total
-Cache Usage:  45.2% (14.5GB used)
-  ├─ Reads:   ~8.7GB (7048 blocks)
-  └─ Writes:  ~5.8GB (4681 blocks)
-Dirty Blocks: 12.3% (3.9GB dirty)
-Hit Ratio:    89.5% (45231 total operations)
-Read Hits:    92.1% (28934 read operations)
-Write Hits:   85.2% (16297 write operations)
+I/O Pipeline (writes flow left to right): (drive figures: 5 s average)
+                                                                           ┌──────────────────────┐
+                                                                           │ NVMe nvme0n1         │
+                                                                           │ 8% busy 51°C         │
+                                                                       ┌──▶│ R0 W160 MB/s         │
+ ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐   │   │ latency w3ms r0ms    │
+ │ RAM CACHE       │     │ KERNEL FLUSH    │     │ LVM CACHE       │   │   │ queue 1              │
+ │ 8.1GB dirty     │     │ 16.6MB/s ↓      │     │ writeback       │   │   └──────────────────────┘
+ │ ████░░░░░░  37% │────▶│ ETA 8m18s       │────▶│ 7.5GB dirty     │───┤
+ │ 21.7GB limit    │     │ 56.0MB writing  │     │ 3.6MB/s ↓       │   │   ┌──────────────────────┐
+ │                 │     │                 │     │ ETA 35m33s      │   │   │ HDD sda              │
+ └─────────────────┘     └─────────────────┘     └─────────────────┘   │   │ 96% busy             │
+                                                                       └──▶│ R2.1 W38.4 MB/s      │
+                                                                           │ latency w142ms r15ms │
+                                                                           │ queue 12             │
+                                                                           └──────────────────────┘
+ Bottleneck: HDD sda (96% busy, 142 ms latency, reading 2.1 / writing 38.4 MB/s). Everything to its
+ left is waiting on it.
+
+Dirty Data (RAM) and Drives: (drive figures: 5 s average)
+Dirty (RAM):  8.1GB waiting to be written  |  56.0MB being written now
+Drain rate:   16.6MB/s draining  ETA to clear: 8m18s
+Dirty RAM     [██████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 37.3% of 21.7GB limit
+
+NVMe nvme0n1: write 160.3 MB/s  read 0.2 MB/s  |  queue 1
+              busy 8%  |  latency write 3 ms  read 0 ms  |  temp 51°C
+NVMe Busy     [████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 8%
+
+HDD sda:      write 38.4 MB/s  read 2.1 MB/s  |  queue 12
+              busy 96%  |  latency write 142 ms  read 15 ms
+HDD Busy      [█████████████████████████████████████████████████████████░░░] 96%
+
+ext4 init:    [███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 19.6% done
+              11,704 of 59,617 groups zeroed  |  47,913 remaining (80.4%)
+              85 groups/min (avg 30m00s)  |  ETA 9h25m  |  checked 22s ago
+
+LVM Cache:
+Cache Mode:   writeback  (dirty LVM blocks exist only on the cache until flushed)
+Cache Pool:   930.9GB total
+Cache Usage:  18.4% (170.9GB used)
+Copied in:    23.8GB (24,373 blocks, HDD to cache)  |  now 14.0MB/s
+Evicted:      40.0MB (40 blocks, dropped from cache)  |  now 0.0B/s
+Dirty Blocks: 0.8% (7.5GB dirty on the LVM cache)
+Flush:        3.6MB/s flushing  ETA to clear: 35m33s
+Hit Ratio:    40.3% (1,368,838 operations)
+Read Hits:    93.9% (392,163 hits, 25,675 misses)
+Write Hits:   16.7% (159,015 hits, 791,985 misses)
 
 Real-time Status:
-Cache Usage   [████████████████████░░░░░░░░░] 45.2%
-              █ Read cache  █ Write cache  ░ Free
-Dirty Blocks  [████░░░░░░░░░░░░░░░░░░░░░░░░░░] 12.3%
-Hit Ratio     [████████████████████████████░] 89.5%
-Read Hits     [████████████████████████████░] 92.1%
-Write Hits    [██████████████████████████░░░] 85.2%
+Cache Usage   [███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 18.4%
+Dirty Blocks  [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 0.8%
+Hit Ratio     [████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 40.3%
+Read Hits     [████████████████████████████████████████████████████████░░░░] 93.9%
+Write Hits    [██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 16.7%
 
-Historical Trends (last 45 samples):
-
-Cache Usage Over Time:
-100%|                                          |
- 75%|      ●                                   |
- 50%|    ●   ●●●                               |
- 25%|  ●       ●●●●●                          |
-  0%|●●           ●●●●●●●●●●●●●●●●●●●●●●●●●●●●|
-    ────────────────────────────────────────────
-    45 samples ago                          now
-
-Hit Ratio Over Time:
-100%|●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●|
- 75%|                                          |
- 50%|                                          |
- 25%|                                          |
-  0%|                                          |
-    ────────────────────────────────────────────
-    45 samples ago                          now
-
-Terminal: 120x30 | Bar width: 84 | Graph width: 108 | Press Ctrl+C to exit
+Refresh 1s (+ faster, - slower) | q to quit
 ```
+
+*(Sample numbers; colors are not shown here. Stage boxes and bars turn green, yellow or red as load rises.)*
 
 ## Installation
 
@@ -114,234 +123,177 @@ pip install cachetop
 
 ## Quick Start
 
-**Binary:**
+Run it **as root** (`sudo`). Reading the cache counters and, for the ext4 progress line, the filesystem needs root.
+
 ```bash
-# Auto-detect and monitor LVM cache
-cachetop
+# Auto-detect and monitor the LVM cache (default volume vg_games/games is tried first)
+sudo cachetop
 
 # Show help
 cachetop --help
 
-# Monitor specific volume
-cachetop --vg my_vg --lv my_lv
+# Monitor a specific volume
+sudo cachetop --vg my_vg --lv my_lv
 ```
 
 **From source:**
 ```bash
-```bash
 # Basic usage with auto-detection
-python3 cachetop.py
+sudo python3 cachetop.py
 
-# Fast monitoring with longer history
-python3 cachetop.py --interval 1 --history 120
+# Refresh twice a second
+sudo python3 cachetop.py --interval 0.5
 
-# Force interactive selection menu
-python3 cachetop.py --pick
+# Force the interactive selection menu
+sudo python3 cachetop.py --pick
 
-# Monitor specific volume (skip auto-detection)
-# Gaming setup with fast refresh
-python3 cachetop.py --vg vg_games --lv games --interval 1
-
-# Database monitoring with extended history
-python3 cachetop.py --vg vg_db --lv database --interval 5 --history 120
-
-# System cache monitoring
-python3 cachetop.py --vg vg_system --lv root
+# Monitor a specific volume (skip auto-detection)
+sudo python3 cachetop.py --vg vg_games --lv games
 ```
-```
+
+While it is running: **`+`** refreshes faster, **`-`** slower, **`q`** (or Ctrl+C) quits.
 
 ## Requirements
 
-- Python 3.6+
-- LVM2 with cache support
-- sudo privileges (for accessing LVM statistics)
-- A configured LVM cache setup
+- Python 3.7+
+- LVM2 with dm-cache support (`dmsetup`; `lvs` and `pvs` are used for fallback and drive detection)
+- Root privileges (run with `sudo`)
+- A terminal at least **100 columns** wide with Unicode and ANSI color support
+- Optional: `dumpe2fs` (e2fsprogs) for the ext4 initialization progress line
 
-## Understanding the Data Points
+## Understanding the Display
 
-### Current Statistics Section
+### I/O Pipeline
 
-#### Cache Pool
 ```
-Cache Pool: 32.0GB total
+RAM CACHE ──▶ KERNEL FLUSH ──▶ LVM CACHE ──┬──▶ NVMe (cache drive)
+                                           └──▶ HDD  (slow origin disk)
 ```
-- **What it is**: The total size of your cache pool (SSD/fast storage)
-- **What it means**: The maximum amount of data that can be cached
-- **Good values**: Depends on your workload, typically 10-20% of your slow storage
 
-#### Cache Usage
-```
-Cache Usage: 45.2% (14.5GB used)
-  ├─ Reads:   ~9.1GB (2234 blocks)
-  └─ Writes:  ~5.4GB (1322 blocks)
-```
-- **What it is**: How much of your cache is currently occupied
-- **Estimation**: Read/write breakdown is estimated based on operation ratios
-- **What it means**: 
-  - Higher usage = more data is cached (good for performance)
-  - 100% usage = cache is full, may need tuning
-- **Good values**: 70-95% for active workloads
+Writes travel left to right. Each box shows what that stage is doing right now:
 
-#### Dirty Blocks
-```
-Dirty Blocks: 12.3% (3.9GB dirty)
-```
-- **What it is**: Cached data that has been modified but not yet written to slow storage
-- **What it means**: 
-  - High dirty ratio = more pending writes to slow storage
-  - Very high values may indicate write bottlenecks
-- **Good values**: <20% (depends on write policy)
-- **Red flags**: >30% may indicate performance issues
-- **Display**: Always shown in blue for easy identification
+| Stage | What it shows |
+|---|---|
+| **RAM cache** | Dirty data waiting in the kernel page cache, a meter of how close it is to the stall limit, and the limit itself |
+| **Kernel flush** | How fast the RAM backlog is draining (↓) or growing (↑), an ETA, and how much is being written this moment |
+| **LVM cache** | The cache mode and either how full the cache is or how much dirty data it holds. In writeback mode with dirty blocks it also shows the flush speed and ETA |
+| **NVMe / HDD** | Busy %, read/write throughput, latency, queue depth (and temperature for NVMe) |
 
-#### Hit Ratios
-```
-Hit Ratio:    89.5% (45231 total operations)
-Read Hits:    92.1% (28934 read operations)
-Write Hits:   85.2% (16297 write operations)
-```
-- **What it is**: Percentage of requests served from cache vs slow storage
-- **What it means**:
-  - **Total Hit Ratio**: Overall cache effectiveness
-  - **Read Hits**: How often reads are served from cache
-  - **Write Hits**: How often writes go to cache (vs slow storage)
-- **Good values**: 
-  - Total: >80% excellent, >60% good, <50% may need tuning
-  - Reads: Usually higher than writes
-  - Writes: Depends on write policy (writethrough vs writeback)
+Box borders are **green** below 50% load, **yellow** from 50%, and **red** from 85%.
+
+The **Bottleneck** line names the most loaded device and says whether anything is actually waiting on it. If RAM is full only because a device is slow, it blames the device. It will also say when the disk is simply busy with its own reads, or when writeback is holding data that is not on the slow disk yet.
+
+### Dirty Data (RAM) and Drives
+
+- **Dirty (RAM)** — data that applications have written but the kernel has not flushed yet, and how much is being written right now.
+- **Drain rate / ETA** — the change in dirty data, averaged over about 10 seconds. `ETA = dirty data ÷ drain rate`. It is the *net* rate: if applications are still writing, the drain is slower and the ETA longer.
+- **Dirty RAM bar** — percentage of the kernel's dirty-data limit, computed from `vm.dirty_bytes`, or from `vm.dirty_ratio × MemAvailable`. This is an estimate of the point where the kernel starts stalling writers; throttling begins gradually before it.
+- **Drive lines** — throughput, latency and busy % are **5-second time-weighted averages**, so bursty I/O does not flicker. Queue depth is the instantaneous value. The cache drive is the non-rotational disk in the volume group; the origin is the rotational one.
+- **ext4 init** — shown only while the `ext4lazyinit` kernel thread is running (a one-time job after `mkfs.ext4` that zeroes inode tables). Needs root. Progress comes from counting block groups flagged `ITABLE_ZEROED` via `dumpe2fs`, checked in the background **at most once a minute**. Speed is `groups zeroed ÷ elapsed time` averaged over the whole session (up to an hour of samples, shown after 2 minutes); `ETA = remaining groups ÷ speed`.
+
+### LVM Cache
+
+| Line | Meaning |
+|---|---|
+| **Cache Mode** | `writethrough` (safe: the slow disk always has a full copy), `writeback` (fast: dirty blocks live only on the cache until flushed) or `passthrough` |
+| **Cache Pool** | Total size of the cache |
+| **Cache Usage** | Share of the cache currently holding data |
+| **Copied in** | Blocks promoted from the slow disk into the cache (cumulative, with the current rate). Needs `dmsetup`; shown as `n/a` if cachetop had to fall back to `lvs` |
+| **Evicted** | Blocks demoted (dropped) from the cache, with the current rate |
+| **Dirty Blocks** | Cache data not yet written to the slow disk |
+| **Flush** | Net rate dirty blocks are being written back (`flushing`), or `growing` if new dirty data arrives faster. Includes an ETA |
+| **Hit Ratio / Read Hits / Write Hits** | Exact hit and miss counts since the cache was attached |
+
+**Reading the hit ratios:** under a write-heavy workload (such as installing games) most writes miss the cache, so the overall hit ratio looks poor even when the cache is doing its job for reads. Look at **Read Hits** for how well the cache serves your reads. In writethrough mode every write still goes to the slow disk.
 
 ### Real-time Status Bars
 
-#### Cache Usage Bar (Dual-Color)
-```
-Cache Usage   [████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 45.2%
-              █ Read cache  █ Write cache  ░ Free
-```
-- **Green (█)**: Estimated cache blocks used for read data
-- **Red (█)**: Estimated cache blocks used for write data  
-- **Gray (░)**: Free cache space
-- **What it tells you**: Whether your cache is read-heavy or write-heavy
+Percentage bars for cache usage, dirty blocks, and the three hit ratios. Hit-ratio bars are green above 80%, yellow from 60%, and red below. Dirty blocks are always blue.
 
-#### Individual Performance Bars
-Performance bars use dynamic color coding based on effectiveness:
-- **🟢 Green**: Excellent performance (>80% hit ratio)
-- **🟡 Yellow**: Good performance (60-80% hit ratio)
-- **🔴 Red**: Needs attention (<60% hit ratio)
-- **🔵 Blue**: Dirty blocks (always blue for easy identification)
+### Interactive Volume Selection
 
-#### Dynamic Terminal Sizing
-- **Responsive Design**: Bars and graphs automatically adjust to your terminal width
-- **Real-time Adaptation**: Resize your terminal window and see immediate changes on next refresh
-- **Optimal Usage**: Makes full use of available screen space for better data visualization
-- **Smart Minimums**: Maintains readability even in narrow terminal windows
-
-#### Interactive Volume Selection
-- **Auto-Detection**: Automatically finds and uses LVM cache volumes
-- **Smart Selection**: Single volume auto-selected, multiple volumes show menu
-- **Arrow Navigation**: Use ↑/↓ keys to navigate, Enter to select
-- **Manual Override**: Use `--vg` and `--lv` for direct specification
-- **Force Menu**: Use `--pick` to always show selection interface
-
-### Historical Trends
-
-#### Cache Usage Over Time
-Shows how cache utilization changes over time:
-- **Rising trend**: Cache warming up or increasing workload
-- **Stable high**: Well-utilized cache
-- **Fluctuating**: Variable workload patterns
-- **Graph width**: Automatically adjusts to terminal size for maximum data points
-
-#### Hit Ratio Trends
-- **Stable high ratios**: Well-tuned cache
-- **Declining ratios**: May need cache size increase or policy adjustment
-- **Low read hits**: Consider larger cache or different algorithms
-- **Low write hits**: May indicate writethrough policy or write-heavy workload
-- **Color coding**: Headers use different colors to distinguish read/write trends
+- **Auto-Detection**: with no arguments cachetop tries `vg_games/games` first, then scans for cache volumes
+- **Smart Selection**: a single volume is used automatically; several show a menu
+- **Arrow Navigation**: ↑/↓ to move, Enter to select
+- **Manual Override**: `--vg` and `--lv`; **Force Menu**: `--pick`
 
 ## Cache Policies and Their Impact
 
 ### Writethrough vs Writeback
-- **Writethrough**: Writes go to both cache and slow storage immediately
+- **Writethrough**: Writes go to both the cache and the slow storage
   - Lower write hit ratios
-  - Better data safety
-  - Higher write latency
-- **Writeback**: Writes go to cache first, written to slow storage later
-  - Higher write hit ratios
-  - Higher dirty block ratios
-  - Better write performance
+  - Better data safety: losing the cache drive loses no data
+  - Writes run at slow-disk speed
+- **Writeback**: Writes can land on the cache first and reach the slow storage later
+  - Dirty blocks exist only on the cache until flushed — keep a UPS connected
+  - Large sequential writes may still go straight to the slow disk: dm-cache does not treat a big sequential stream as hot data, so writeback is not a guaranteed install-speed boost
+  - After an unclean shutdown dm-cache cannot trust which blocks are dirty, so it has to write cached blocks back
 
 ### Cache Modes
 - **writeback**: Best performance, data temporarily in cache only
 - **writethrough**: Safer, data written to both cache and origin
-- **passthrough**: Cache disabled, all I/O goes to slow storage
+- **passthrough**: Cache disabled for writes, I/O goes to slow storage
 
 ## Troubleshooting Common Issues
 
 ### Low Hit Ratios (<50%)
-- **Possible causes**: Cache too small, random I/O patterns, cache warming up
+- **Possible causes**: Cache too small, random I/O patterns, cache warming up, a write-heavy period (check **Read Hits** instead)
 - **Solutions**: Increase cache size, check workload patterns, wait for warm-up
 
-### High Dirty Blocks (>30%)
-- **Possible causes**: Write-heavy workload, slow backend storage, large sequential writes
-- **Solutions**: Check backend disk performance, consider cache policy adjustment
+### High Dirty Blocks
+- **Possible causes**: Write-heavy workload in writeback mode, slow backing disk, a disk busy with reads or housekeeping
+- **Solutions**: Look at the pipeline's bottleneck line, check the slow disk's latency and busy %, consider writethrough
+
+### Slow Disk Shows 100% Busy With Little Throughput
+- **Possible causes**: A shingled (SMR) disk stalling under sustained writes, mixed read/write load, background work such as `ext4lazyinit` or cache migration (the "Copied in" rate)
+- **Solutions**: Let one-time jobs finish, avoid mixing big installs with verification, consider a CMR disk or a separate fast install drive
 
 ### Cache Not Filling (Low usage)
 - **Possible causes**: Light workload, cache larger than working set, recent setup
 - **Solutions**: Normal for light workloads, monitor during peak usage
 
-### Fluctuating Performance
-- **Possible causes**: Variable workload, background processes, cache thrashing
-- **Solutions**: Analyze workload patterns, consider cache size adjustment
-
 ## Command Line Options
 
 ```bash
-python3 cachetop.py [OPTIONS]
+cachetop [OPTIONS]
 
 Options:
   --vg VG_NAME           Volume group name (optional - auto-detected if not specified)
   --lv LV_NAME           Logical volume name (optional - auto-detected if not specified)
-  --interval SECONDS     Refresh interval in seconds (default: 2)
-  --history SAMPLES      Number of historical samples to keep (default: 60)
-  --pick                 Force interactive selection menu even with single cache volume
-  -h, --help            Show help message
+  --interval SECONDS     Refresh interval in seconds, decimals allowed (default: 1)
+  --pick                 Force interactive selection menu even with a single cache volume
+  --version              Show version
+  -h, --help             Show help message
 ```
+
+Keys while running: `+`/`=` faster (halves the interval, minimum 0.1 s), `-`/`_` slower (doubles it, maximum 10 s), `q` quit.
 
 ### Auto-Detection Behavior
 
-1. **No arguments**: Automatically detects cache volumes
+1. **No arguments**: tries `vg_games/games` with one quick query, then scans for cache volumes
    - **Single volume**: Uses it automatically
    - **Multiple volumes**: Shows interactive selection menu
    - **No volumes**: Shows error and exits
-
-2. **With --pick**: Always shows interactive selection menu
-
-3. **With --vg and --lv**: Uses specified volumes directly
+2. **With --pick**: Always shows the interactive selection menu
+3. **With --vg and --lv**: Uses the specified volume directly
 
 ## Examples
 
-### Auto-Detection (Recommended)
 ```bash
 # Simple auto-detection
-python3 lvm_cache_status.py
+sudo python3 cachetop.py
 
-# Auto-detection with custom settings
-python3 lvm_cache_status.py --interval 1 --history 120
+# Faster refresh
+sudo python3 cachetop.py --interval 0.5
 
 # Force selection menu
-python3 lvm_cache_status.py --pick
-```
+sudo python3 cachetop.py --pick
 
-### Manual Specification
-```bash
-# Gaming setup with manual volume specification
-python3 lvm_cache_status.py --vg vg_games --lv games --interval 1
+# A specific volume
+sudo python3 cachetop.py --vg vg_games --lv games
 
-# Database server monitoring
-python3 lvm_cache_status.py --vg vg_db --lv database --interval 5 --history 120
-
-# System cache monitoring
-python3 lvm_cache_status.py --vg vg_system --lv root
+# Database server, slower refresh
+sudo python3 cachetop.py --vg vg_db --lv database --interval 5
 ```
 
 ## Performance Tips
@@ -349,34 +301,36 @@ python3 lvm_cache_status.py --vg vg_system --lv root
 1. **Cache Sizing**: Start with 10-20% of your slow storage size
 2. **SSD Selection**: Use high-quality SSDs with good random I/O performance
 3. **Monitor Regularly**: Check during peak usage periods
-4. **Tune Based on Workload**: 
+4. **Tune Based on Workload**:
    - Read-heavy: Focus on cache size
-   - Write-heavy: Consider writeback policy
+   - Write-heavy: Consider writeback only with a UPS, and watch the flush ETA
    - Mixed: Balance based on hit ratio analysis
-5. **Terminal Optimization**: Use a wider terminal for more detailed historical graphs
-6. **Color Interpretation**: Green bars indicate good performance, red bars need attention
+5. **Terminal**: Use a window at least 100 columns wide
+6. **Color Interpretation**: Green is healthy, red needs attention
 
 ## Technical Notes
 
-- **Block Size**: Automatically detected from LVM configuration
-- **Estimation Method**: Read/write cache distribution estimated from operation ratios
-- **Refresh Rate**: Configurable, but too frequent updates may impact performance
-- **Sudo Requirements**: Needed for `lvs` command access to cache statistics
-- **Terminal Sizing**: Uses `shutil.get_terminal_size()` with fallbacks for compatibility
-- **Dynamic Adaptation**: Bar and graph widths recalculated on every refresh cycle
-- **Performance**: Efficient terminal size detection with minimal overhead
+- **Cache counters** come from `dmsetup status <vg>-<lv>` (the dm-cache target status line): used/total blocks, dirty blocks, read/write hits and misses, promotions, demotions, block size and mode. If `dmsetup` is unusable, cachetop falls back to `lvs`, which does not report promotions or demotions.
+- **Drives**: `pvs` finds the physical volumes of the volume group once; the rotational one is the slow disk, the non-rotational one is the cache drive. Rates come from `/proc/diskstats` snapshots compared over a 5 second window.
+- **RAM**: dirty data and writeback come from `/proc/meminfo`; the dirty limit is derived from `vm.dirty_bytes` / `vm.dirty_ratio` and `MemAvailable` (an approximation of what the kernel calls dirtyable memory).
+- **ETA smoothing**: RAM drain and LVM flush rates use about 10 seconds of samples; the ext4 init speed uses up to an hour.
+- **ext4 init** runs `dumpe2fs` in a background thread so a busy disk never blocks the screen.
+- **Rendering**: each frame is drawn with a single write on the terminal's alternate screen, at a steady rate.
+- **Layout**: fixed 100 columns (`MAX_WIDTH` / `BAR_WIDTH` and the `PIPE_*` constants at the top of `cachetop.py`).
+- **Sudo**: when not already root, cachetop prefixes its LVM queries with `sudo`; running the whole program under `sudo` avoids repeated prompts.
 
 ## Compatibility
 
 - **LVM2**: Version 2.02.95+ (cache support required)
 - **Kernel**: Linux 3.9+ (dm-cache support)
-- **Python**: 3.6+ (f-string support)
-- **Terminal**: Any terminal with ANSI color support
+- **Python**: 3.7+
+- **Terminal**: ANSI color and Unicode box-drawing characters, at least 100 columns
 
 ## Files in This Directory
 
 - `cachetop.py` - Main monitoring script
 - `README.md` - This documentation
+- `RELEASE_NOTES.md` - Release history
 - `BUILD.md` - Building and deployment guide
 - `build.sh` - Binary build script
 - `install.sh` - Installation script
@@ -385,8 +339,6 @@ python3 lvm_cache_status.py --vg vg_system --lv root
 - `requirements.txt` - Runtime dependencies (none)
 - `requirements-build.txt` - Build dependencies
 - `.github/workflows/` - CI/CD automation
-- `create_storage.sh` - Helper script for LVM cache setup (if present)
-- `verify_lvm_cache.sh` - Cache verification script (if present)
 
 ## Building from Source
 

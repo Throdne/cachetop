@@ -1,5 +1,33 @@
 # Release Notes
 
+## Unreleased
+
+A large rework focused on answering "where are my writes waiting, and why is it slow?". Version numbers are unchanged until a release is cut.
+
+### Added
+- **I/O pipeline diagram** at the top: RAM cache → kernel flush → LVM cache → NVMe / HDD, boxes colored by load, with a plain-language **bottleneck verdict** (it distinguishes "everything upstream is waiting" from "the disk is busy with its own reads/background work" and "writeback is holding data not yet on the slow disk")
+- **Dirty data in RAM**: amount, data being written, drain rate and ETA, and a bar against the kernel's dirty-data limit (`vm.dirty_bytes` / `vm.dirty_ratio`)
+- **NVMe and HDD statistics**: throughput, latency, queue depth, busy % (NVMe temperature), averaged over 5 seconds
+- **Writeback flush speed and ETA** for dirty LVM cache blocks, shown in the pipeline box and in the LVM section
+- **Real cache counters**: blocks copied in (promotions) and evicted (demotions) with live rates, and exact hit/miss counts
+- **ext4 background init progress** (`ext4lazyinit`): percent done, groups remaining, speed and ETA, collected in a background thread (root only)
+- Live keys: `+` / `-` change the refresh rate, `q` quits; `--interval` accepts decimals (default 1 second)
+
+### Changed
+- Cache counters now come from `dmsetup status` (one cheap kernel query) with `lvs` kept as a fallback, instead of running `lvs` on every refresh
+- Flicker-free redraw on the alternate screen, at a steady refresh rate
+- Much faster start-up: no splash delay, the default volume (`vg_games/games`) is tried with a single query before scanning LVM
+- Fixed 100-column layout with fixed-width bars (replaces the dynamic terminal-width sizing)
+- Runs as root without nesting `sudo` calls
+
+### Fixed
+- Cache statistics failed on setups created with `lvconvert --cachevol`, because the code looked for a hidden `games_cache_cpool` volume. The cache size is now derived from the cache block size
+- A leftover unreachable duplicate `run()` method and unused imports were removed
+
+### Removed
+- Historical line graphs and the `--history` option
+- The dual-color "read cache / write cache" bar and the Reads/Writes lines, which were guesses derived from operation ratios rather than measured data
+
 ## Version 2025.07 - Initial Release (July 27, 2025)
 
 🎉 **First stable release of cachetop** - A real-time LVM cache monitoring tool inspired by htop!
