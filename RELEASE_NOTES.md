@@ -11,7 +11,7 @@ A large rework focused on answering "where are my writes waiting, and why is it 
 - **Writeback flush speed and ETA** for dirty LVM cache blocks, shown in the pipeline box and in the LVM section
 - **Real cache counters**: blocks copied in (promotions) and evicted (demotions) with live rates, and exact hit/miss counts
 - **ext4 background init progress** (`ext4lazyinit`): percent done, groups remaining, speed and ETA, collected in a background thread (root only)
-- Live keys: `+` / `-` change the refresh rate, `q` quits; `--interval` accepts decimals (default 1 second)
+- Live keys: `+` / `-` step the refresh rate through 0.25, 0.5, 0.75, 1, 2, 4, 8 and 10 seconds, `q` quits; `--interval` takes 0.25 to 10 (default 1 second)
 - **Stalled-flush verdict**: when writeback holds data that nothing is flushing and no device is busy, the pipeline says so and explains that dm-cache flushes only when the volume is quiet
 
 ### Changed

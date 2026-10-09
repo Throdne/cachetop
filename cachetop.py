@@ -32,6 +32,7 @@ BAR_WIDTH = 60   # every percentage bar; leaves room for the longest label after
 PIPE_STAGE_INNER = 15
 PIPE_DRIVE_INNER = 20
 PIPE_GAP = 5
+REFRESH_STEPS = (0.25, 0.5, 0.75, 1, 2, 4, 8, 10)   # seconds; the + / - keys move between these
 DRIVE_RATE_WINDOW = 5.0   # seconds; drive speeds are averaged over this long so bursts do not flicker
 
 def dm_device_name(vg, lv):
@@ -939,14 +940,27 @@ class LVMCacheMonitor:
             return os.read(sys.stdin.fileno(), 1).decode(errors='ignore')
         return None
 
+    def set_refresh_interval(self, seconds):
+        """Set the refresh rate (limited to the allowed range) and resize the ~10 s averaging windows to match"""
+        self.refresh_interval = min(max(seconds, REFRESH_STEPS[0]), REFRESH_STEPS[-1])
+        window = max(3, int(round(10 / self.refresh_interval)))
+        for name in ('drain_history', 'cache_drain_history', 'promo_history', 'demo_history'):
+            setattr(self, name, deque(getattr(self, name), maxlen=window))
+
+    def step_refresh(self, faster):
+        """Move to the next preset refresh rate; stays where it is at either end"""
+        cur = self.refresh_interval
+        if faster:
+            options = [s for s in REFRESH_STEPS if s < cur - 1e-9]
+            target = options[-1] if options else cur
+        else:
+            options = [s for s in REFRESH_STEPS if s > cur + 1e-9]
+            target = options[0] if options else cur
+        self.set_refresh_interval(target)
+
     def run(self, refresh_interval=1.0):
         """Main loop: draws each frame with a single write (no flicker) at a steady rate"""
-        self.refresh_interval = min(max(refresh_interval, 0.1), 10.0)
-        window = max(3, int(round(10 / self.refresh_interval)))   # about 10 seconds of samples
-        self.drain_history = deque(maxlen=window)
-        self.cache_drain_history = deque(maxlen=window)
-        self.promo_history = deque(maxlen=window)
-        self.demo_history = deque(maxlen=window)
+        self.set_refresh_interval(refresh_interval)
         out = sys.stdout
         interactive = sys.stdin.isatty() and out.isatty()
         old_term = None
@@ -980,10 +994,10 @@ class LVMCacheMonitor:
                     if key in ('q', 'Q'):
                         return
                     if key in ('+', '='):
-                        self.refresh_interval = max(0.1, self.refresh_interval / 2)
+                        self.step_refresh(faster=True)
                         next_tick = time.monotonic()
                     elif key in ('-', '_'):
-                        self.refresh_interval = min(10.0, self.refresh_interval * 2)
+                        self.step_refresh(faster=False)
                         next_tick = time.monotonic()
         except KeyboardInterrupt:
             pass
@@ -1084,7 +1098,7 @@ def main():
     parser.add_argument('--version', action='version', version='cachetop 2025.07')
     parser.add_argument('--vg', help='Volume group name')
     parser.add_argument('--lv', help='Logical volume name')
-    parser.add_argument('--interval', type=float, default=1.0, help='Refresh interval in seconds, e.g. 0.5 (default: 1)')
+    parser.add_argument('--interval', type=float, default=1.0, help='Refresh interval in seconds, 0.25 to 10 (default: 1)')
     parser.add_argument('--pick', action='store_true', help='Force interactive volume selection even if auto-detection works')
     
     args = parser.parse_args()

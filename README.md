@@ -151,7 +151,7 @@ sudo python3 cachetop.py --pick
 sudo python3 cachetop.py --vg vg_games --lv games
 ```
 
-While it is running: **`+`** refreshes faster, **`-`** slower, **`q`** (or Ctrl+C) quits.
+While it is running: **`+`** refreshes faster and **`-`** slower, stepping through 0.25, 0.5, 0.75, 1, 2, 4, 8 and 10 seconds; **`q`** (or Ctrl+C) quits.
 
 ## Requirements
 
@@ -264,13 +264,13 @@ cachetop [OPTIONS]
 Options:
   --vg VG_NAME           Volume group name (optional - auto-detected if not specified)
   --lv LV_NAME           Logical volume name (optional - auto-detected if not specified)
-  --interval SECONDS     Refresh interval in seconds, decimals allowed (default: 1)
+  --interval SECONDS     Refresh interval in seconds, 0.25 to 10 (default: 1)
   --pick                 Force interactive selection menu even with a single cache volume
   --version              Show version
   -h, --help             Show help message
 ```
 
-Keys while running: `+`/`=` faster (halves the interval, minimum 0.1 s), `-`/`_` slower (doubles it, maximum 10 s), `q` quit.
+Keys while running: `+`/`=` faster and `-`/`_` slower, moving through the steps 0.25, 0.5, 0.75, 1, 2, 4, 8, 10 seconds (it stops at either end); `q` quit.
 
 ### Auto-Detection Behavior
 
