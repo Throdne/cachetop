@@ -200,15 +200,19 @@ The **Bottleneck** line names the most loaded device and says whether anything i
 | **Cache Usage** | Share of the cache currently holding data |
 | **Copied in** | Blocks promoted from the slow disk into the cache (cumulative, with the current rate). Needs `dmsetup`; shown as `n/a` if cachetop had to fall back to `lvs` |
 | **Evicted** | Blocks demoted (dropped) from the cache, with the current rate |
-| **Dirty Blocks** | Cache data not yet written to the slow disk |
-| **Flush** | Net rate dirty blocks are being written back (`flushing`), or `growing` if new dirty data arrives faster. Includes an ETA |
+| **Dirty Blocks** | Cache data not yet written to the slow disk. Shown in writeback mode, or whenever dirty blocks exist (for example leftovers right after leaving writeback); hidden in writethrough, which never holds dirty data |
+| **Flush** | Net rate dirty blocks are being written back (`flushing`), or `growing` if new dirty data arrives faster. Includes an ETA. Shown together with Dirty Blocks |
 | **Hit Ratio / Read Hits / Write Hits** | Exact hit and miss counts since the cache was attached |
 
 **Reading the hit ratios:** under a write-heavy workload (such as installing games) most writes miss the cache, so the overall hit ratio looks poor even when the cache is doing its job for reads. Look at **Read Hits** for how well the cache serves your reads. In writethrough mode every write still goes to the slow disk.
 
 ### Real-time Status Bars
 
-Percentage bars for cache usage, dirty blocks, and the three hit ratios. Hit-ratio bars are green above 80%, yellow from 60%, and red below. Dirty blocks are always blue.
+Percentage bars for cache usage, dirty blocks, and the three hit ratios. Hit-ratio bars are green above 80%, yellow from 60%, and red below. The dirty-blocks bar is always blue and appears only when the Dirty Blocks line does (writeback mode, or dirty blocks present).
+
+### Stalled flush
+
+In writeback mode dm-cache writes dirty blocks back to the slow disk only when the volume has been quiet for a moment. If something keeps using the volume (a download, `ext4lazyinit`, the journal), the dirty count can sit still or grow while the disks look idle. cachetop's verdict then reads **"Stalled: writeback is holding N GB ... but nothing is flushing it"** (shown when writeback holds at least 1 GB, nothing is flushing it, and no device is busy). Stopping whatever uses the volume (closing programs, unmounting it) lets the backlog drain at disk speed.
 
 ### Interactive Volume Selection
 

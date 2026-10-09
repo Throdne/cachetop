@@ -675,6 +675,13 @@ class LVMCacheMonitor:
         """ASCII picture of the write path with the live bottleneck highlighted"""
         c = self.colors
         pr = self.pipeline_pressures(stats, sysinfo)
+        # Writeback is holding data but nothing is flushing it, and no device is busy: dm-cache only
+        # writes dirty blocks back when the volume has been quiet for a moment.
+        held = stats['dirty_blocks'] * stats['block_size'] if stats and stats['cache_mode'] == 'writeback' else 0
+        stuck = (held >= 1024 ** 3 and stats['dirty_drain_bps'] is not None and stats['dirty_drain_bps'] <= 65536
+                 and pr['hdd'] < 60 and pr['nvme'] < 60 and pr['ram'] < 85)
+        if stuck:
+            pr['lvm'] = max(pr['lvm'], 60)       # show the LVM box in yellow
         worst = self.find_bottleneck(pr)
         hdd, nvme = sysinfo['disks']['hdd'], sysinfo['disks']['cache']
         col = lambda key: self.pressure_color(pr[key])
@@ -712,7 +719,8 @@ class LVMCacheMonitor:
                     line4, line5 = "measuring...", ""
                 elif d > 65536:
                     line4 = f"{c['green']}{self.format_bytes(d)}/s ↓{reset}"
-                    line5 = f"ETA {self.format_duration(stats['dirty_eta_seconds'])}"
+                    eta_s = stats['dirty_eta_seconds']
+                    line5 = f"ETA {self.format_duration(eta_s)}" if eta_s is not None else ""
                 elif d < -65536:
                     line4, line5 = f"{c['red']}+{self.format_bytes(-d)}/s ↑{reset}", "growing"
                 else:
@@ -806,6 +814,12 @@ class LVMCacheMonitor:
         elif worst == 'ram':
             msg = (f"{c['red']}Bottleneck: RAM{reset} (dirty data is at {pr['ram']:.0f}% of the kernel stall limit; "
                    f"writers will be paused).")
+        elif stuck:
+            msg = (f"{c['yellow']}Stalled:{reset} writeback is holding {self.short_bytes(held)} that is not on the HDD, "
+                   f"but nothing is flushing it and the HDD is only {pr['hdd']:.0f}% busy. dm-cache writes dirty blocks "
+                   f"back only when the volume has been quiet for a moment, and I/O to {self.vg_name}/{self.lv_name} never "
+                   f"pauses (often ext4lazyinit or the journal). To let it flush, stop whatever uses the volume "
+                   f"(close programs, unmount it); a backlog then drains at disk speed.")
         elif max(pr.values()) < 10 and sysinfo['dirty_kb'] < 100 * 1024:
             msg = f"{c['green']}Idle:{reset} nothing significant is moving through the pipeline."
         else:
@@ -863,19 +877,22 @@ class LVMCacheMonitor:
                   f"  |  now {self.format_bytes(stats['promo_bps'] or 0)}/s")
             print(f"Evicted:      {self.format_bytes(stats['demotions'] * bs)} ({stats['demotions']:,} blocks, dropped from cache)"
                   f"  |  now {self.format_bytes(stats['demo_bps'] or 0)}/s")
-        print(f"Dirty Blocks: {stats['dirty_ratio_pct']:.1f}% ({dirty_cache_size} dirty on the LVM cache)")
-        drain = stats['dirty_drain_bps']
-        if stats['dirty_blocks'] == 0:
-            print("Flush:        nothing pending")
-        elif drain is None:
-            print("Flush:        measuring...")
-        elif drain > 65536:
-            eta = f"  ETA to clear: {self.format_duration(stats['dirty_eta_seconds'])}"
-            print(f"Flush:        {self.colors['green']}{self.format_bytes(drain)}/s flushing{self.colors['reset']}{eta}")
-        elif drain < -65536:
-            print(f"Flush:        {self.colors['red']}{self.format_bytes(-drain)}/s growing{self.colors['reset']}")
-        else:
-            print("Flush:        steady (no net flushing)")
+        # Dirty data only exists in writeback mode (or as leftovers right after leaving it)
+        show_dirty = stats['cache_mode'] == 'writeback' or stats['dirty_blocks'] > 0
+        if show_dirty:
+            print(f"Dirty Blocks: {stats['dirty_ratio_pct']:.1f}% ({dirty_cache_size} dirty on the LVM cache)")
+            drain = stats['dirty_drain_bps']
+            if stats['dirty_blocks'] == 0:
+                print("Flush:        nothing pending")
+            elif drain is None:
+                print("Flush:        measuring...")
+            elif drain > 65536:
+                eta = f"  ETA to clear: {self.format_duration(stats['dirty_eta_seconds'])}" if stats['dirty_eta_seconds'] is not None else ""
+                print(f"Flush:        {self.colors['green']}{self.format_bytes(drain)}/s flushing{self.colors['reset']}{eta}")
+            elif drain < -65536:
+                print(f"Flush:        {self.colors['red']}{self.format_bytes(-drain)}/s growing{self.colors['reset']}")
+            else:
+                print("Flush:        steady (no net flushing)")
         print(f"Hit Ratio:    {stats['hit_ratio_pct']:.1f}% ({stats['total_ops']:,} operations)")
         print(f"Read Hits:    {stats['read_hit_ratio_pct']:.1f}% ({stats['read_hits']:,} hits, {stats['read_misses']:,} misses)")
         print(f"Write Hits:   {stats['write_hit_ratio_pct']:.1f}% ({stats['write_hits']:,} hits, {stats['write_misses']:,} misses)")
@@ -887,10 +904,10 @@ class LVMCacheMonitor:
         usage_bar = self.create_bar_graph(stats['cache_usage_pct'], 100, None, 'cyan')
         print(f"Cache Usage   [{usage_bar}] {stats['cache_usage_pct']:.1f}%")
 
-        # Dirty blocks bar
-        dirty_color = 'blue'  # Changed to blue color
-        dirty_bar = self.create_bar_graph(stats['dirty_ratio_pct'], 100, None, dirty_color)
-        print(f"Dirty Blocks  [{dirty_bar}] {stats['dirty_ratio_pct']:.1f}%")
+        # Dirty blocks bar (hidden when there is nothing to show, see show_dirty above)
+        if show_dirty:
+            dirty_bar = self.create_bar_graph(stats['dirty_ratio_pct'], 100, None, 'blue')
+            print(f"Dirty Blocks  [{dirty_bar}] {stats['dirty_ratio_pct']:.1f}%")
         
         # Hit ratio bar
         hit_color = 'green' if stats['hit_ratio_pct'] > 80 else 'yellow' if stats['hit_ratio_pct'] > 60 else 'red'

@@ -12,6 +12,7 @@ A large rework focused on answering "where are my writes waiting, and why is it 
 - **Real cache counters**: blocks copied in (promotions) and evicted (demotions) with live rates, and exact hit/miss counts
 - **ext4 background init progress** (`ext4lazyinit`): percent done, groups remaining, speed and ETA, collected in a background thread (root only)
 - Live keys: `+` / `-` change the refresh rate, `q` quits; `--interval` accepts decimals (default 1 second)
+- **Stalled-flush verdict**: when writeback holds data that nothing is flushing and no device is busy, the pipeline says so and explains that dm-cache flushes only when the volume is quiet
 
 ### Changed
 - Cache counters now come from `dmsetup status` (one cheap kernel query) with `lvs` kept as a fallback, instead of running `lvs` on every refresh
@@ -19,6 +20,7 @@ A large rework focused on answering "where are my writes waiting, and why is it 
 - Much faster start-up: no splash delay, the default volume (`vg_games/games`) is tried with a single query before scanning LVM
 - Fixed 100-column layout with fixed-width bars (replaces the dynamic terminal-width sizing)
 - Runs as root without nesting `sudo` calls
+- The Dirty Blocks and Flush lines and the dirty-blocks bar are hidden in writethrough mode unless dirty blocks exist (writethrough never holds dirty data)
 
 ### Fixed
 - Cache statistics failed on setups created with `lvconvert --cachevol`, because the code looked for a hidden `games_cache_cpool` volume. The cache size is now derived from the cache block size
