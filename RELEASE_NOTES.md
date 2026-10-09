@@ -12,6 +12,7 @@ A large rework focused on answering "where are my writes waiting, and why is it 
 - **Real cache counters**: blocks copied in (promotions) and evicted (demotions) with live rates, and exact hit/miss counts
 - **ext4 background init progress** (`ext4lazyinit`): percent done, groups remaining, speed and ETA, collected in a background thread (root only)
 - Live keys: `+` / `-` step the refresh rate through 0.25, 0.5, 0.75, 1, 2, 4, 8 and 10 seconds, `q` quits; `--interval` takes 0.25 to 10 (default 1 second)
+- **Help overlay**: press `h` (lowercase) for a scrollable explanation of every section and number on the screen; sampling continues behind it, and `h`, `q` or Esc go back
 - **Stalled-flush verdict**: when writeback holds data that nothing is flushing and no device is busy, the pipeline says so and explains that dm-cache flushes only when the volume is quiet
 
 ### Changed

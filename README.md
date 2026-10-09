@@ -13,6 +13,7 @@ A real-time terminal monitor for LVM cache (dm-cache) with an htop-style display
 - 📊 Color-coded percentage bars (cache usage, dirty blocks, hit ratios)
 - ⚡ Light on the system: one `dmsetup status` query per refresh, flicker-free redraw, adjustable refresh rate
 - 🔍 Automatic LVM cache volume detection, with an interactive picker when there are several
+- 📖 **Built-in help**: press `h` for a scrollable overlay that explains every line and number on the screen (hit ratio, cache mode, dirty blocks, ext4 init, ...)
 - ⌨️ `+` / `-` change the refresh rate while running, `q` quits
 
 ## Sample Output
@@ -151,7 +152,7 @@ sudo python3 cachetop.py --pick
 sudo python3 cachetop.py --vg vg_games --lv games
 ```
 
-While it is running: **`+`** refreshes faster and **`-`** slower, stepping through 0.25, 0.5, 0.75, 1, 2, 4, 8 and 10 seconds; **`q`** (or Ctrl+C) quits.
+While it is running: **`+`** refreshes faster and **`-`** slower, stepping through 0.25, 0.5, 0.75, 1, 2, 4, 8 and 10 seconds; **`h`** (lowercase) opens the help overlay; **`q`** (or Ctrl+C) quits.
 
 ## Requirements
 
@@ -270,7 +271,7 @@ Options:
   -h, --help             Show help message
 ```
 
-Keys while running: `+`/`=` faster and `-`/`_` slower, moving through the steps 0.25, 0.5, 0.75, 1, 2, 4, 8, 10 seconds (it stops at either end); `q` quit.
+Keys while running: `+`/`=` faster and `-`/`_` slower, moving through the steps 0.25, 0.5, 0.75, 1, 2, 4, 8, 10 seconds (it stops at either end); `h` opens the help overlay (lowercase only: scroll with Up/Down or `j`/`k`, PgUp/PgDn or Space, Home/End or `g`/`G`; `h`, `q` or Esc go back); `q` quit.
 
 ### Auto-Detection Behavior
 

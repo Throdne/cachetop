@@ -18,6 +18,7 @@ import glob
 import io
 import re
 import select
+import shutil
 import threading
 import termios
 import tty
@@ -51,6 +52,9 @@ class LVMCacheMonitor:
         self.use_dmsetup = True      # cheap kernel query; falls back to lvs if unusable
         self.disk_snaps = {'hdd': deque(), 'cache': deque()}   # (time, counters) for the drive-speed window
         self.refresh_interval = 1.0
+        self.help_open = False       # the H overlay is showing
+        self.help_scroll = 0         # first visible line of the help text
+        self._help_cache = None
         self.prev_sample = None
         self.drain_history = deque(maxlen=5)  # recent drain rates (kB/s), smooths the ETA
         self.cache_drain_history = deque(maxlen=10)  # same, for dirty LVM cache blocks (bytes/s)
@@ -597,22 +601,28 @@ class LVMCacheMonitor:
         """Visible length of a string that contains color codes"""
         return len(self.ANSI_RE.sub('', s))
 
-    def print_wrapped(self, text, indent=2, first_indent=None):
-        """Print text wrapped at MAX_WIDTH; color codes do not count toward the width"""
-        words = text.split(' ')
+    def wrap_lines(self, text, indent=2, first_indent=None):
+        """Wrap text at MAX_WIDTH and return the lines; color codes do not count toward the width"""
+        lines = []
         lead = ' ' * (indent if first_indent is None else first_indent)
         line, length = lead, len(lead)
-        for word in words:
+        for word in text.split(' '):
             wl = self.vlen(word)
             if length + wl + (1 if line.strip() else 0) > MAX_WIDTH and line.strip():
-                print(line)
+                lines.append(line)
                 line, length = ' ' * indent, indent
             if line.strip():
                 line += ' '
                 length += 1
             line += word
             length += wl
-        print(line)
+        lines.append(line)
+        return lines
+
+    def print_wrapped(self, text, indent=2, first_indent=None):
+        """Print text wrapped at MAX_WIDTH"""
+        for line in self.wrap_lines(text, indent, first_indent):
+            print(line)
 
     def pad(self, s, width):
         return s + ' ' * max(0, width - self.vlen(s))
@@ -928,8 +938,156 @@ class LVMCacheMonitor:
         
 
         # Add terminal size info at bottom
-        print(f"{self.colors['dim']}Refresh {self.refresh_interval:g}s (+ faster, - slower) | q to quit{self.colors['reset']}")
+        print(f"{self.colors['dim']}Refresh {self.refresh_interval:g}s (+ faster, - slower) | h help | q to quit{self.colors['reset']}")
     
+    def help_lines(self):
+        """The whole help text as a list of display lines"""
+        c = self.colors
+        out = []
+
+        def title(text):
+            out.extend(['', f"{c['bold']}{c['cyan']}{text}{c['reset']}", f"{c['cyan']}{'─' * len(text)}{c['reset']}"])
+
+        def para(text):
+            out.extend(self.wrap_lines(text, indent=2))
+
+        def item(term, text):
+            out.extend(self.wrap_lines(f"{c['bold']}{term}{c['reset']}: {text}", indent=4, first_indent=2))
+
+        para("cachetop watches one LVM cache volume (dm-cache): a fast drive (the cache) in front of a big, slow disk. "
+             "The screen follows a write from top to bottom: programs write into RAM, the kernel flushes it, the LVM "
+             "cache takes it, and the NVMe and HDD do the actual work.")
+        para(f"Colors: {c['green']}green{c['reset']} is healthy, {c['yellow']}yellow{c['reset']} is busy, "
+             f"{c['red']}red{c['reset']} needs attention (load below 50%, from 50%, and from 85%). Drive speeds are "
+             f"averages over 5 seconds and the ETAs average about 10 seconds. Run it with sudo so it can read the cache counters.")
+
+        title("I/O PIPELINE (the picture at the top)")
+        item("RAM CACHE", "Data that programs have written but that Linux is still holding in memory (the page cache) "
+             "and has not sent to the drives yet. 'dirty' is the amount waiting. The meter shows how close that is to the "
+             "kernel's limit, which is printed under it. At the limit the kernel starts stalling programs that write. "
+             "The limit is estimated from vm.dirty_ratio (or vm.dirty_bytes) and the memory available.")
+        item("KERNEL FLUSH", "How fast the RAM backlog is changing. A down arrow means it is draining (with an ETA to "
+             "empty), an up arrow means programs are writing faster than the drives take it, 'steady' means no change. "
+             "'writing' is how much is being sent to the drives at this moment.")
+        item("LVM CACHE", "The layer between the kernel and the drives. It shows the cache mode and either how full the "
+             "cache is or, in writeback mode with dirty data, how much is dirty plus the flush speed (down arrow = being "
+             "flushed to the HDD, up arrow = growing) and an ETA.")
+        item("NVMe and HDD boxes", "The NVMe is the fast cache drive; the HDD is the slow disk behind it, where your data "
+             "really lives. busy = the share of time the drive had work in progress. R and W = read and write speed. "
+             "latency = the average time one request takes (w for writes, r for reads). queue = requests waiting right now.")
+        item("Box colors", "Each box is green below 50% load, yellow from 50% and red from 85%. RAM is measured against the "
+             "kernel limit, the LVM box by the dirty data it holds, and the drives by their busy percentage.")
+        item("Bottleneck line", "Names the most loaded device and says whether anything is waiting on it. If RAM is filling "
+             "up, everything to the left is waiting. If RAM is empty, the disk is simply busy with its own reads or "
+             "background work. In writeback mode it also mentions data held on the cache that is not on the HDD yet.")
+        item("Stalled", "Shown when writeback holds at least 1 GB that nothing is flushing and no drive is busy. dm-cache "
+             "writes dirty blocks back only when the volume has been quiet for a moment, so steady background activity can "
+             "leave the data sitting there. Stopping whatever uses the volume (close programs, unmount it) lets it drain.")
+        item("Idle / No bottleneck", "Idle means nothing significant is moving. No bottleneck means every stage is keeping up.")
+
+        title("DIRTY DATA (RAM) AND DRIVES")
+        item("Dirty (RAM)", "How much written data is waiting in memory to reach the drives, and how much is being written "
+             "to them right now.")
+        item("Drain rate", "The net change of that waiting data, averaged over about 10 seconds. ETA to clear = waiting "
+             "data divided by the drain rate. It is a net figure: if programs keep writing, the drain is slower and the ETA "
+             "longer. 'growing' means data arrives faster than it leaves.")
+        item("Dirty RAM bar", "Waiting data as a share of the kernel limit. This is an estimate, and the kernel begins "
+             "slowing writers gradually before the limit is reached.")
+        item("NVMe and HDD lines", "write and read speed in MB/s, queue = requests waiting, busy = time the drive was "
+             "working, latency = average time per request, and the NVMe's temperature. They are 5-second averages so bursty "
+             "I/O does not flicker. A drive at 100% busy with very little throughput is struggling: a shingled (SMR) disk "
+             "under mixed load, or a flood of small requests.")
+        item("ext4 init", "After mkfs, ext4 zeroes its inode tables in the background (the kernel thread ext4lazyinit) "
+             "instead of up front. This line appears only while that runs and needs root. 'groups zeroed' counts block "
+             "groups whose inode table is done and 'remaining' is what is left. groups/min is the average speed over the "
+             "time cachetop has been open (up to an hour) and ETA is the remaining groups divided by that speed. "
+             "'checked Ns ago' is the age of the count, which is refreshed in the background about once a minute. The job "
+             "throttles itself, is slow on a busy disk, and is harmless to interrupt.")
+
+        title("LVM CACHE")
+        item("Cache Mode", "writeback: writes can land on the fast cache first and reach the slow disk later, so dirty data "
+             "exists only on the cache until it is flushed (keep a UPS connected). writethrough: every write also goes to the "
+             "slow disk, so the cache never holds anything the disk does not have; safer, but writes run at slow-disk speed. "
+             "passthrough: the cache is not used for writes.")
+        item("Cache Pool", "The total size of the cache.")
+        item("Cache Usage", "How much of the cache holds data. A cache that is working is usually well used; a low number "
+             "just means it has not filled yet or your working set is small.")
+        item("Copied in", "Data copied from the slow disk into the cache (the kernel calls these promotions), counted since "
+             "the cache was attached, with the current rate. Hot data is copied in so later reads are fast. Shown as n/a when "
+             "only lvs was available.")
+        item("Evicted", "Data removed from the cache to make room (demotions), with the current rate.")
+        item("Dirty Blocks", "How much cached data differs from the slow disk, meaning data not yet written back. Shown only "
+             "in writeback mode, or when dirty blocks exist (for example leftovers right after leaving writeback).")
+        item("Flush", "How fast dirty blocks are being written back to the slow disk ('flushing', with an ETA), or "
+             "'growing' if new dirty data arrives faster. 'nothing pending' means the cache is clean.")
+        item("Hit Ratio", "Of all requests the cache saw, the share it answered itself instead of passing to the slow disk: "
+             "(read hits + write hits) divided by all operations. It is counted since the cache was attached, not recently. "
+             "A write-heavy period such as an install drags it down because new data is not cached yet.")
+        item("Read Hits", "Reads served from the cache. This is the number that shows the cache helping you: games or files "
+             "you use again load from the fast drive. The counts show hits and misses (a miss went to the slow disk).")
+        item("Write Hits", "Writes that landed on a block already in the cache. Low values are normal: new data is not in the "
+             "cache yet, so most writes are misses and go straight to the slow disk. In writethrough mode every write still "
+             "reaches the slow disk.")
+
+        title("REAL-TIME STATUS BARS")
+        para("The bars repeat the key percentages: Cache Usage, Dirty Blocks (only when shown), Hit Ratio, Read Hits and "
+             "Write Hits. Hit bars are green above 80%, yellow from 60% and red below that. A red write-hit bar during an "
+             "install is normal.")
+
+        title("KEYS")
+        item("h", "Open or close this help.")
+        item("Up / Down, j / k", "Scroll the help one line. PgUp / PgDn or Space scroll a page; Home / End or g / G jump "
+             "to the start or the end.")
+        item("+ and -", "Refresh faster or slower, through 0.25, 0.5, 0.75, 1, 2, 4, 8 and 10 seconds.")
+        item("q", "Close the help, or quit when the help is closed. Ctrl+C quits at any time.")
+
+        title("GOOD TO KNOW")
+        para("Reads served from RAM never reach the drives, so they do not show up in the drive numbers.")
+        para("The hit and miss counts and the copied in / evicted totals start when the cache was attached, not when "
+             "cachetop was started.")
+        para("Flush speeds and ETAs assume the current rate continues. Disks speed up and slow down, so treat them as estimates.")
+        return out
+
+    def help_page_size(self):
+        """Lines of help text that fit under the header (the terminal height minus header and footer)"""
+        return max(5, shutil.get_terminal_size((MAX_WIDTH, 40)).lines - 3)
+
+    def scroll_help(self, key):
+        """Move the help scroll position for a scrolling key; returns True if the key was one"""
+        page = self.help_page_size()
+        moves = {'j': 1, '\x1b[B': 1, '\x1bOB': 1, 'k': -1, '\x1b[A': -1, '\x1bOA': -1,
+                 ' ': page, '\x1b[6~': page, '\x1b[5~': -page}
+        if key in moves:
+            self.help_scroll += moves[key]
+            return True
+        if key in ('g', '\x1b[H', '\x1b[1~', '\x1bOH'):
+            self.help_scroll = 0
+            return True
+        if key in ('G', '\x1b[F', '\x1b[4~', '\x1bOF'):
+            self.help_scroll = 10 ** 6          # clamped when drawn
+            return True
+        return False
+
+    def render_help(self):
+        """One screenful of the help text, as a single string (no trailing newline, so it never scrolls)"""
+        if self._help_cache is None:
+            self._help_cache = self.help_lines()
+        lines = self._help_cache
+        page = self.help_page_size()
+        top = min(max(self.help_scroll, 0), max(0, len(lines) - page))
+        self.help_scroll = top
+        view = lines[top:top + page]
+        c = self.colors
+        header = f"{c['bold']}{c['cyan']}cachetop help{c['reset']}  {c['dim']}(h, q or Esc to go back){c['reset']}"
+        footer = (f"{c['dim']}Up/Down or j/k scroll | PgUp/PgDn/Space page | Home/End | "
+                  f"lines {top + 1}-{top + len(view)} of {len(lines)}{c['reset']}")
+        body = view + [''] * (page - len(view))
+        return '\033[K\n'.join([header, ''] + body + [footer]) + '\033[K'
+
+    def draw_help(self, out):
+        out.write('\033[H' + self.render_help() + '\033[J')
+        out.flush()
+
     def wait_for_key(self, timeout, interactive):
         """Sleep up to `timeout` seconds; return a key if one was pressed"""
         if not interactive:
@@ -937,7 +1095,15 @@ class LVMCacheMonitor:
             return None
         ready, _, _ = select.select([sys.stdin], [], [], max(timeout, 0))
         if ready:
-            return os.read(sys.stdin.fileno(), 1).decode(errors='ignore')
+            fd = sys.stdin.fileno()
+            key = os.read(fd, 1).decode(errors='ignore')
+            if key == '\x1b':
+                # Arrow and page keys arrive as ESC [ ... (a lone Esc has nothing after it)
+                while len(key) < 6 and select.select([sys.stdin], [], [], 0.03)[0]:
+                    key += os.read(fd, 1).decode(errors='ignore')
+                    if key[-1].isalpha() or key[-1] == '~':
+                        break
+            return key
         return None
 
     def set_refresh_interval(self, seconds):
@@ -977,11 +1143,14 @@ class LVMCacheMonitor:
             while True:
                 stats = self.get_lvm_cache_stats()
                 sysinfo = self.get_system_stats()
-                buf = io.StringIO()
-                with contextlib.redirect_stdout(buf):
-                    self.display_stats(stats, sysinfo)
-                out.write('\033[H' + buf.getvalue().replace('\n', '\033[K\n') + '\033[J')
-                out.flush()
+                if self.help_open:
+                    self.draw_help(out)               # keep sampling behind the overlay so the averages stay valid
+                else:
+                    buf = io.StringIO()
+                    with contextlib.redirect_stdout(buf):
+                        self.display_stats(stats, sysinfo)
+                    out.write('\033[H' + buf.getvalue().replace('\n', '\033[K\n') + '\033[J')
+                    out.flush()
 
                 next_tick += self.refresh_interval
                 if next_tick < time.monotonic():   # fell behind; do not try to catch up
@@ -991,9 +1160,22 @@ class LVMCacheMonitor:
                     if remaining <= 0:
                         break
                     key = self.wait_for_key(remaining, interactive)
+                    if key is None:
+                        continue
+                    if self.help_open:
+                        if key in ('h', 'q', 'Q', '\x1b'):
+                            self.help_open = False
+                            next_tick = time.monotonic()      # back to the live view right away
+                        elif self.scroll_help(key):
+                            self.draw_help(out)
+                        continue
                     if key in ('q', 'Q'):
                         return
-                    if key in ('+', '='):
+                    if key == 'h':                            # lowercase h only
+                        self.help_open = True
+                        self.help_scroll = 0
+                        self.draw_help(out)
+                    elif key in ('+', '='):
                         self.step_refresh(faster=True)
                         next_tick = time.monotonic()
                     elif key in ('-', '_'):
