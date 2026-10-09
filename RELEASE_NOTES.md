@@ -7,7 +7,7 @@ A large rework focused on answering "where are my writes waiting, and why is it 
 ### Added
 - **I/O pipeline diagram** at the top: RAM cache → kernel flush → LVM cache → NVMe / HDD, boxes colored by load, with a plain-language **bottleneck verdict** (it distinguishes "everything upstream is waiting" from "the disk is busy with its own reads/background work" and "writeback is holding data not yet on the slow disk")
 - **Dirty data in RAM**: amount, data being written, drain rate and ETA, and a bar against the kernel's dirty-data limit (`vm.dirty_bytes` / `vm.dirty_ratio`)
-- **NVMe and HDD statistics**: throughput, latency, queue depth, busy % (NVMe temperature), averaged over 5 seconds
+- **NVMe and HDD statistics**: throughput, latency, queue depth, busy % (NVMe temperature), averaged over 10 seconds
 - **Writeback flush speed and ETA** for dirty LVM cache blocks, shown in the pipeline box and in the LVM section
 - **Real cache counters**: blocks copied in (promotions) and evicted (demotions) with live rates, and exact hit/miss counts
 - **ext4 background init progress** (`ext4lazyinit`): percent done, groups remaining, speed and ETA, collected in a background thread (root only)

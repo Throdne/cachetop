@@ -6,7 +6,7 @@ A real-time terminal monitor for LVM cache (dm-cache) with an htop-style display
 
 - 🧭 **I/O pipeline diagram** — RAM cache → kernel flush → LVM cache → cache drive / slow disk, with each stage colored by load and a plain-language **bottleneck verdict**
 - 🧠 **Dirty data in RAM** — how much is waiting to be written, how fast it drains, an ETA, and how close it is to the kernel's stall limit
-- 💽 **Both drives side by side** — throughput, latency, queue depth, busy % (and temperature for the NVMe), averaged over 5 seconds so lumpy I/O reads smoothly
+- 💽 **Both drives side by side** — throughput, latency, queue depth, busy % (and temperature for the NVMe), averaged over 10 seconds (the same span as the RAM drain) so lumpy I/O reads smoothly
 - 🗄️ **Real LVM cache counters** — blocks copied into the cache (promotions) and evicted (demotions) with live rates, plus exact hit/miss counts
 - ⏱️ **Writeback flush ETA** — speed and time-to-clear for dirty cache blocks, in the pipeline and in the LVM section
 - 🛠️ **ext4 background init progress** — percent done, groups remaining, speed and ETA while `ext4lazyinit` zeroes a new filesystem's inode tables
@@ -24,7 +24,7 @@ The layout is a fixed 100 columns wide (the terminal must be at least that wide)
 cachetop - vg_games/games
 ===================================
 
-I/O Pipeline (writes flow left to right): (drive figures: 5 s average)
+I/O Pipeline (writes flow left to right): (drive figures: 10 s average)
                                                                            ┌──────────────────────┐
                                                                            │ NVMe nvme0n1         │
                                                                            │ 8% busy 51°C         │
@@ -43,7 +43,7 @@ I/O Pipeline (writes flow left to right): (drive figures: 5 s average)
  Bottleneck: HDD sda (96% busy, 142 ms latency, reading 2.1 / writing 38.4 MB/s). Everything to its
  left is waiting on it.
 
-Dirty Data (RAM) and Drives: (drive figures: 5 s average)
+Dirty Data (RAM) and Drives: (drive figures: 10 s average)
 Dirty (RAM):  8.1GB waiting to be written  |  56.0MB being written now
 Drain rate:   16.6MB/s draining  ETA to clear: 8m18s
 Dirty RAM     [██████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 37.3% of 21.7GB limit
@@ -189,7 +189,7 @@ The **Bottleneck** line names the most loaded device and says whether anything i
 - **Dirty (RAM)** — data that applications have written but the kernel has not flushed yet, and how much is being written right now.
 - **Drain rate / ETA** — the change in dirty data, averaged over about 10 seconds. `ETA = dirty data ÷ drain rate`. It is the *net* rate: if applications are still writing, the drain is slower and the ETA longer.
 - **Dirty RAM bar** — percentage of the kernel's dirty-data limit, computed from `vm.dirty_bytes`, or from `vm.dirty_ratio × MemAvailable`. This is an estimate of the point where the kernel starts stalling writers; throttling begins gradually before it.
-- **Drive lines** — throughput, latency and busy % are **5-second time-weighted averages**, so bursty I/O does not flicker. Queue depth is the instantaneous value. The cache drive is the non-rotational disk in the volume group; the origin is the rotational one.
+- **Drive lines** — throughput, latency and busy % are **10-second time-weighted averages**, so bursty I/O does not flicker. Queue depth is the instantaneous value. The cache drive is the non-rotational disk in the volume group; the origin is the rotational one.
 - **ext4 init** — shown only while the `ext4lazyinit` kernel thread is running (a one-time job after `mkfs.ext4` that zeroes inode tables). Needs root. Progress comes from counting block groups flagged `ITABLE_ZEROED` via `dumpe2fs`, checked in the background **at most once a minute**. Speed is `groups zeroed ÷ elapsed time` averaged over the whole session (up to an hour of samples, shown after 2 minutes); `ETA = remaining groups ÷ speed`.
 
 ### LVM Cache
@@ -316,7 +316,7 @@ sudo python3 cachetop.py --vg vg_db --lv database --interval 5
 ## Technical Notes
 
 - **Cache counters** come from `dmsetup status <vg>-<lv>` (the dm-cache target status line): used/total blocks, dirty blocks, read/write hits and misses, promotions, demotions, block size and mode. If `dmsetup` is unusable, cachetop falls back to `lvs`, which does not report promotions or demotions.
-- **Drives**: `pvs` finds the physical volumes of the volume group once; the rotational one is the slow disk, the non-rotational one is the cache drive. Rates come from `/proc/diskstats` snapshots compared over a 5 second window.
+- **Drives**: `pvs` finds the physical volumes of the volume group once; the rotational one is the slow disk, the non-rotational one is the cache drive. Rates come from `/proc/diskstats` snapshots compared over a 10 second window.
 - **RAM**: dirty data and writeback come from `/proc/meminfo`; the dirty limit is derived from `vm.dirty_bytes` / `vm.dirty_ratio` and `MemAvailable` (an approximation of what the kernel calls dirtyable memory).
 - **ETA smoothing**: RAM drain and LVM flush rates use about 10 seconds of samples; the ext4 init speed uses up to an hour.
 - **ext4 init** runs `dumpe2fs` in a background thread so a busy disk never blocks the screen.

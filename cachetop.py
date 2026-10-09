@@ -34,7 +34,7 @@ PIPE_STAGE_INNER = 15
 PIPE_DRIVE_INNER = 20
 PIPE_GAP = 5
 REFRESH_STEPS = (0.25, 0.5, 0.75, 1, 2, 4, 8, 10)   # seconds; the + / - keys move between these
-DRIVE_RATE_WINDOW = 5.0   # seconds; drive speeds are averaged over this long so bursts do not flicker
+DRIVE_RATE_WINDOW = 10.0   # seconds; drive speeds are averaged over this long (same span as the RAM drain) so bursts do not flicker
 
 def dm_device_name(vg, lv):
     """Device-mapper name of an LV ('-' is doubled inside names)"""
@@ -959,7 +959,7 @@ class LVMCacheMonitor:
              "cache takes it, and the NVMe and HDD do the actual work.")
         para(f"Colors: {c['green']}green{c['reset']} is healthy, {c['yellow']}yellow{c['reset']} is busy, "
              f"{c['red']}red{c['reset']} needs attention (load below 50%, from 50%, and from 85%). Drive speeds are "
-             f"averages over 5 seconds and the ETAs average about 10 seconds. Run it with sudo so it can read the cache counters.")
+             f"averages over 10 seconds, the same span the ETAs use. Run it with sudo so it can read the cache counters.")
 
         title("I/O PIPELINE (the picture at the top)")
         item("RAM CACHE", "Data that programs have written but that Linux is still holding in memory (the page cache) "
@@ -994,7 +994,7 @@ class LVMCacheMonitor:
         item("Dirty RAM bar", "Waiting data as a share of the kernel limit. This is an estimate, and the kernel begins "
              "slowing writers gradually before the limit is reached.")
         item("NVMe and HDD lines", "write and read speed in MB/s, queue = requests waiting, busy = time the drive was "
-             "working, latency = average time per request, and the NVMe's temperature. They are 5-second averages so bursty "
+             "working, latency = average time per request, and the NVMe's temperature. They are 10-second averages so bursty "
              "I/O does not flicker. A drive at 100% busy with very little throughput is struggling: a shingled (SMR) disk "
              "under mixed load, or a flood of small requests.")
         item("ext4 init", "After mkfs, ext4 zeroes its inode tables in the background (the kernel thread ext4lazyinit) "
